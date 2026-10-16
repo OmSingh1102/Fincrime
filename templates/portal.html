@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FinCrime Operations Hub - Straive</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="auth">
+    <div class="auth-wrap wide">
+        <div class="auth-head">
+            <img class="auth-logo-top" src="{{ url_for('static', filename='img/straive-logo.png') }}" alt="Straive">
+            <div class="auth-bar"></div>
+            <h1>FinCrime KYC/KYB Operations Hub</h1>
+            <p>Unified back-office case management for customer and business onboarding</p>
+        </div>
+
+        <div class="auth-grid" style="grid-template-columns: repeat(2, minmax(0, 1fr))">
+            <a href="{{ url_for('login') }}" class="auth-option primary">
+                <span class="tile">{{ icon('shield-check') }}</span>
+                <h2>Analyst sign-in</h2>
+                <div class="lead">L1 confirming &amp; screening, L2 investigation, EDD and QC consoles</div>
+                <span class="btn btn-primary btn-lg btn-block">Continue to sign-in</span>
+            </a>
+            <a href="{{ url_for('hub.sign_in') }}" class="auth-option">
+                <span class="tile">{{ icon('shield') }}</span>
+                <h2>KYC Operations Hub</h2>
+                <div class="lead">AI agents with a human in the loop: document intake, identity normalisation, watchlist adjudication and triage over 1,000 synthetic cases</div>
+                <span class="btn btn-outline btn-lg btn-block">Open the hub</span>
+            </a>
+        </div>
+
+        <div class="auth-foot" style="margin-top:28px">
+            Every person, company and document in this demo is fictional.
+            Screening records are simulated &bull; vendor names appear as labels only.
+        </div>
+    </div>
+</body>
+</html>

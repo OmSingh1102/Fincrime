@@ -1,0 +1,105 @@
+{% extends "hub/base.html" %}
+{% from "hub/_macros.html" import kpi, meter, stack, cols, bars, status_badge, badge, prio with context %}
+{% from "hub/_icons.html" import hicon %}
+{% block title %}Overview · {{ product }}{% endblock %}
+{% block content %}
+{% set s = vm.split %}{% set acc = vm.accuracy %}
+<div class="hx-head">
+    <div>
+        <div class="hx-eyebrow">Overview</div>
+        <h1>Where the agents stand on the book</h1>
+        <p>{{ s.n|hub_num }} onboarding cases from the reconciliation log, each with one watchlist hit. The agents ran at {{ vm.last_run.at|hub_dt }} in {{ vm.last_run.seconds }} s with the confidence gate at {{ vm.gate }}. The split below is measured, not assumed: every number is recomputed from the cases.</p>
+    </div>
+    <div class="hx-actions">
+        <a class="hx-btn hx-btn-outline" href="{{ url_for('hub.accuracy') }}">{{ icon('bar-chart') }} Accuracy against history</a>
+        <a class="hx-btn hx-btn-primary" href="{{ url_for('hub.screening') }}">{{ hicon('hand') }} Open the review queue</a>
+    </div>
+</div>
+
+<div class="hx-grid cols-4">
+    <div class="hx-kpi hx-kpi-good">
+        <div class="hx-kpi-label">AI-adjudicated</div>
+        <div class="hx-kpi-hero">
+            {{ meter(s.adjudicated_pct, 'of cases') }}
+            <div>
+                <div class="hx-kpi-value">{{ s.adjudicated|hub_num }}</div>
+                <div class="hx-kpi-sub">cleared, returned to the customer or confirmed by the agents · {{ s.automated_pct }}% needed no analyst at all</div>
+            </div>
+        </div>
+    </div>
+    {{ kpi('Human adjudication', s.human_pct, s.human_adjudication|hub_num ~ ' cases the agents would not decide: date of birth not decisive, sanctions guard, fraud referral', 'accent', '%') }}
+    {{ kpi('Agreement with history', acc.precision, acc.precision_n|hub_num ~ ' of ' ~ acc.auto_clear|hub_num ~ ' auto-clears were historical false positives · ' ~ acc.tp_flagged ~ ' of ' ~ acc.tp_total ~ ' true matches flagged · ' ~ acc.tp_cleared ~ ' true matches cleared', '', '%') }}
+    {{ kpi('Analyst hours returned', vm.saved.hours|hub_num, vm.saved.pct ~ '% of the ' ~ (vm.saved.total_minutes // 60)|hub_num ~ ' hours the log records for these cases', '', 'h') }}
+</div>
+
+<div class="hx-grid wide-left">
+    <div class="hx-card">
+        <div class="hx-card-head"><div><h2>Where the split comes from</h2><div class="hx-sub">Solid segments are decided by the agents; hatched segments go to a person. One axis, every case once.</div></div></div>
+        <div class="hx-card-body">
+            {{ stack(vm.segments) }}
+            <p class="hx-note box hx-mt-16">A confirmed match is AI-adjudicated but never closed by the agents: the record is routed to a decision queue where L2 or EDD decides the relationship. Move the gate on the <a href="{{ url_for('hub.agents') }}">Agents</a> page and re-run to see the split move.</p>
+        </div>
+    </div>
+    <div class="hx-card">
+        <div class="hx-card-head"><div><h2>Open for a person</h2><div class="hx-sub">{{ vm.open_human }} open · {{ vm.overdue }} past their SLA</div></div></div>
+        <div class="hx-card-body pad-0">
+            <table class="hx-table compact">
+                <thead><tr><th>Queue</th><th class="num">Open</th><th class="num">P1</th><th class="num">Overdue</th><th class="num">Oldest</th></tr></thead>
+                <tbody>
+                {% for q in vm.queues %}
+                <tr><td>{{ q.queue }}</td><td class="num">{{ q.n }}</td><td class="num">{{ q.p1 }}</td><td class="num">{% if q.overdue %}<span class="hx-badge hx-badge-critical">{{ q.overdue }}</span>{% else %}0{% endif %}</td><td class="num hx-muted">{{ q.oldest_h }} h</td></tr>
+                {% else %}
+                <tr><td colspan="5" class="hx-empty">Nothing is waiting for a person.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="hx-grid cols-2">
+    <div class="hx-card">
+        <div class="hx-card-head"><div><h2>Cases by review month</h2><div class="hx-sub">Volume in the log, June to October 2026</div></div></div>
+        <div class="hx-card-body">
+            {% set mx = vm.monthly|map(attribute='n')|max %}
+            {{ cols(vm.monthly, 'n', 'label', mx) }}
+        </div>
+    </div>
+    <div class="hx-card">
+        <div class="hx-card-head"><div><h2>AI-adjudicated share by month</h2><div class="hx-sub">The share the agents decide, month by month</div></div></div>
+        <div class="hx-card-body">
+            {{ cols(vm.monthly, 'pct', 'label', 100, 's3', '%') }}
+        </div>
+    </div>
+</div>
+
+<div class="hx-card">
+    <div class="hx-card-head"><div><h2>Agents</h2><div class="hx-sub">What each agent did over the book</div></div><a class="hx-btn hx-btn-outline hx-btn-sm" href="{{ url_for('hub.agents') }}">Settings and playbook</a></div>
+    <div class="hx-card-body">
+        <div class="hx-agent-strip">
+            {% for st in vm.agents %}
+            <div class="item">
+                <span class="ic">{{ hicon(st.agent.icon) }}</span>
+                <div><b>{{ st.agent.short }}</b><small>{{ st.runs|hub_num }} runs · {{ st.needs_human|hub_num }} to a person{% if st.mean_ms %} · {{ st.mean_ms }} ms{% endif %}</small></div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<div class="hx-card">
+    <div class="hx-card-head"><div><h2>Latest human decisions</h2><div class="hx-sub">What analysts did on top of the agents</div></div><a class="hx-btn hx-btn-outline hx-btn-sm" href="{{ url_for('hub.audit') }}">Audit log</a></div>
+    <div class="hx-card-body pad-0">
+        <table class="hx-table compact">
+            <thead><tr><th>When</th><th>Case</th><th>Client</th><th>Decision</th><th>By</th></tr></thead>
+            <tbody>
+            {% for c in vm.latest %}
+            <tr><td class="hx-muted">{{ c.decision.at|hub_dt }}</td><td class="id"><a href="{{ url_for('hub.case', case_id=c.id) }}">{{ c.id }}</a></td><td>{{ c.identity.name.canonical }}</td><td>{{ status_badge(c) }} <span class="hx-small hx-muted">{{ c.decision.action }}</span></td><td>{{ c.decision.by }}</td></tr>
+            {% else %}
+            <tr><td colspan="5" class="hx-empty">No human decision yet. Open the review queue to make one.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

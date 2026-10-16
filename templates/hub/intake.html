@@ -1,0 +1,69 @@
+{% extends "hub/base.html" %}
+{% from "hub/_macros.html" import badge, status_badge, thumb with context %}
+{% from "hub/_icons.html" import hicon %}
+{% block title %}Intake & documents · {{ product }}{% endblock %}
+{% block content %}
+<div class="hx-head">
+    <div>
+        <div class="hx-eyebrow">Intake &amp; documents</div>
+        <h1>System rejections and referrals</h1>
+        <p>Uploads the Document Intake Agent would not accept: a flat scan instead of a camera photo, a partial image, glare, an expired passport, a stale or PO-Box proof of address. Rejections go back to the customer with the message shown; a page whose check digits fail is never sent anywhere - it goes to L2 as a possible fraud upload.</p>
+    </div>
+    <div class="hx-actions">
+        <span class="hx-badge hx-badge-info">{{ counts.Reject }} returned to the customer</span>
+        <span class="hx-badge hx-badge-critical">{{ counts.Refer }} fraud referrals</span>
+        <span class="hx-badge hx-badge-neutral">{{ counts.RFI }} awaiting documents</span>
+    </div>
+</div>
+
+<div class="hx-card">
+    <form class="hx-filters" method="get" action="{{ url_for('hub.intake') }}">
+        <div class="hx-field"><label>Decision</label>
+            <select class="hx-select hx-select-sm" name="decision"><option value="">All</option>{% for d in ('Reject', 'Refer', 'RFI') %}<option value="{{ d }}" {% if f.decision == d %}selected{% endif %}>{{ {'Reject': 'Returned to customer', 'Refer': 'Fraud referral', 'RFI': 'Awaiting documents'}[d] }}</option>{% endfor %}</select></div>
+        <div class="hx-field"><label>Reason</label>
+            <select class="hx-select hx-select-sm" name="reason"><option value="">All</option>{% for code in codes %}<option value="{{ code }}" {% if f.reason == code %}selected{% endif %}>{{ reasons[code].label if code in reasons else code }}</option>{% endfor %}</select></div>
+        <div class="hx-field"><label>Passport</label>
+            <select class="hx-select hx-select-sm" name="country"><option value="">All</option>{% for k, v in (('IN', 'India'), ('US', 'United States'), ('VN', 'Vietnam')) %}<option value="{{ k }}" {% if f.country == k %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
+        <div class="hx-field grow"><label>Search</label><input class="hx-input hx-input-sm" name="q" value="{{ f.q }}" placeholder="Case id or name"></div>
+        <button class="hx-btn hx-btn-outline hx-btn-sm" type="submit">{{ icon('filter') }} Apply</button>
+        <a class="hx-btn hx-btn-ghost hx-btn-sm" href="{{ url_for('hub.intake') }}">Clear</a>
+    </form>
+    <div class="hx-card-body pad-0">
+        <table class="hx-table">
+            <thead><tr><th>Case</th><th>Client</th><th>Decision</th><th>Reason</th><th>Status</th><th>Received</th><th></th></tr></thead>
+            <tbody>
+            {% for c in rows %}
+            {% set it = c.intake %}
+            <tr>
+                <td class="id"><a href="{{ url_for('hub.case', case_id=c.id) }}">{{ c.id }}</a></td>
+                <td class="name"><b>{{ c.identity.name.canonical }}</b><small>{{ c.country_name }} passport · {{ c.documents.secondary.type }} · {{ c.documents.poa.type }}</small></td>
+                <td>{% if it.decision == 'Refer' %}{{ badge('Fraud referral', 'critical') }}{% elif it.decision == 'Reject' %}{{ badge('Returned to customer', 'info') }}{% elif c.status == triage.STATUS_AUTO_RFI %}{{ badge('Address RFI', 'info') }}{% else %}{{ badge(it.decision, 'neutral') }}{% endif %}</td>
+                <td class="wrap">{% if it.reason_code in reasons %}{{ reasons[it.reason_code].label }}{% elif c.status == triage.STATUS_AUTO_RFI %}{{ reasons['ADDR_UNRESOLVED'].label }}{% else %}{{ it.reason_code or '-' }}{% endif %}
+                    {% if it.codes|length > 1 %}<span class="hx-small hx-muted">+{{ it.codes|length - 1 }} more</span>{% endif %}</td>
+                <td>{{ status_badge(c) }}</td>
+                <td class="hx-muted">{{ c.synth.received_at|hub_hours }} ago</td>
+                <td><details class="hx-small"><summary class="hx-btn hx-btn-ghost hx-btn-sm">Details</summary>
+                    <div class="hx-mt-8" style="min-width: 420px">
+                        {% set step = (c.trail|selectattr('agent', 'equalto', 'intake')|list|first) %}
+                        {% if step %}<ul class="hx-findings">{% for fd in step.findings %}<li class="{{ fd.tone }}"><span class="code">{{ fd.code }}</span><span>{{ fd.text }}</span></li>{% endfor %}</ul>{% endif %}
+                        {% if c.customer_message %}<div class="hx-message hx-mt-12"><span class="to">To the customer</span>{{ c.customer_message }}</div>{% endif %}
+                        {% if not c.status.startswith('Closed') %}
+                        <div class="hx-row hx-mt-12">
+                            {% if it.decision in ('Reject', 'Refer') %}<form method="post" action="{{ url_for('hub.case_intake', case_id=c.id) }}"><input type="hidden" name="action" value="accept"><button class="hx-btn hx-btn-outline hx-btn-sm" title="Override the agent and accept the documents">{{ icon('check') }} Accept documents</button></form>{% endif %}
+                            {% if c.customer_message %}<form method="post" action="{{ url_for('hub.case_intake', case_id=c.id) }}"><input type="hidden" name="action" value="resend"><button class="hx-btn hx-btn-outline hx-btn-sm">{{ icon('send') }} Re-send message</button></form>{% endif %}
+                            {% if it.decision != 'Refer' %}<form method="post" action="{{ url_for('hub.case_intake', case_id=c.id) }}"><input type="hidden" name="action" value="refer"><button class="hx-btn hx-btn-outline hx-btn-sm">{{ icon('flag') }} Refer as fraud</button></form>{% endif %}
+                            <a class="hx-btn hx-btn-primary hx-btn-sm" href="{{ url_for('hub.case', case_id=c.id) }}">Open case</a>
+                        </div>
+                        {% endif %}
+                    </div>
+                </details></td>
+            </tr>
+            {% else %}
+            <tr><td colspan="7" class="hx-empty">No intake rejection matches these filters.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="hx-foot"><span>{{ rows|length }} of {{ total }} intake cases</span><span>Defects are planted on synthetic uploads; the checks that find them are real.</span></div>
+</div>
+{% endblock %}

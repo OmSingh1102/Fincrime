@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Compliance - FinCrime Operations Hub{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    {% block extra_css %}{% endblock %}
+</head>
+<body class="console">
+<div class="app" id="app">
+    {# ── Top bar: product, tenant, product tabs, identity ── #}
+    <header class="topbar">
+        <div class="topbar-row">
+            <a class="brand" href="{{ home_url }}">
+                <img src="{{ url_for('static', filename='img/straive-logo.png') }}" alt="Straive">
+                <span class="brand-sep"></span>
+                <span class="brand-name">Compliance</span>
+            </a>
+            <form method="post" action="{{ url_for('set_tenant') }}" class="tenant-form">
+                <input type="hidden" name="next" value="{{ request.path }}">
+                <select name="tenant" class="input input-sm" onchange="this.form.submit()" aria-label="Tenant">
+                    {% for key in analyst_tenants %}
+                    <option value="{{ key }}" {% if key == tenant %}selected{% endif %}>{{ tenants[key].label }}</option>
+                    {% endfor %}
+                </select>
+            </form>
+            <nav class="top-tabs">
+                {% for tab in top_tabs %}
+                {% if tab.endpoint %}
+                <a class="top-tab {% if tab.active %}active{% endif %}" href="{{ url_for(tab.endpoint) }}">{{ tab.label }}</a>
+                {% else %}
+                <span class="top-tab inert" title="Not part of this demo">{{ tab.label }}</span>
+                {% endif %}
+                {% endfor %}
+            </nav>
+            <div class="topbar-right">
+                {% if demo_mode %}
+                <form method="post" action="{{ url_for('reset_demo') }}" class="logout-form"
+                      onsubmit="return confirm('Reset the demo? Every action taken on every case is discarded and the seed reloads.')">
+                    <button type="submit" class="tb-link btn btn-ghost btn-sm" title="Reload the seeded case book">{{ icon('refresh-cw') }} Reset demo</button>
+                </form>
+                {% endif %}
+                {% if switch_users %}
+                <form method="post" action="{{ url_for('switch_user') }}" class="logout-form">
+                    <input type="hidden" name="next" value="{{ request.path }}">
+                    <select name="analyst" class="input input-sm" onchange="this.form.submit()" aria-label="Switch analyst" title="Demo shortcut: work as another analyst">
+                        {% for a in switch_users %}
+                        <option value="{{ a.key }}" {% if a.key == session.user %}selected{% endif %}>{{ a.name }} ({{ a.roles|join('/') }})</option>
+                        {% endfor %}
+                    </select>
+                </form>
+                {% endif %}
+                <span class="tb-link">{{ region }} {{ icon('chevron-down') }}</span>
+                <span class="user-chip"><span class="av">{{ user_initials }}</span><span class="nm">{{ session.name }}</span><span class="rl">{{ role_label }}</span></span>
+                <form method="post" action="{{ url_for('logout') }}" class="logout-form">
+                    <button type="submit" class="btn btn-ghost btn-sm btn-icon" title="Sign out" aria-label="Sign out">{{ icon('log-out') }}</button>
+                </form>
+            </div>
+        </div>
+    </header>
+
+    <div class="app-row">
+        {# ── Left rail ── #}
+        <aside class="app-side">
+            <nav class="app-nav">
+                {% for item in side_nav %}
+                    {% if item.children %}
+                    <div class="side-group {% if item.has_active %}has-active{% endif %}">
+                        <span class="si">{{ icon(item.icon) }}</span><span class="lbl">{{ item.label }}</span>
+                        <span class="caret">{{ icon('chevron-down') }}</span>
+                    </div>
+                    <div class="side-children">
+                        {% for child in item.children %}
+                        <a href="{{ url_for(child.endpoint) }}" class="side-link {% if child.active %}active{% endif %}">
+                            <span class="si">{{ icon(child.icon) }}</span><span class="lbl">{{ child.label }}</span>
+                            {% if child.count %}<span class="count">{{ child.count }}</span>{% endif %}
+                        </a>
+                        {% endfor %}
+                    </div>
+                    {% elif item.disabled %}
+                    <span class="side-link disabled" title="Not part of this demo">
+                        <span class="si">{{ icon(item.icon) }}</span><span class="lbl">{{ item.label }}</span>
+                        <span class="caret">{{ icon('chevron-down') }}</span>
+                    </span>
+                    {% else %}
+                    <a href="{{ url_for(item.endpoint) }}" class="side-link {% if item.active %}active{% endif %}">
+                        <span class="si">{{ icon(item.icon) }}</span><span class="lbl">{{ item.label }}</span>
+                        {% if item.count %}<span class="count">{{ item.count }}</span>{% endif %}
+                    </a>
+                    {% endif %}
+                {% endfor %}
+            </nav>
+        </aside>
+
+        <main class="app-main">
+            <div class="wrap">
+                {% include "_flashes.html" %}
+                {% block content %}{% endblock %}
+            </div>
+        </main>
+    </div>
+</div>
+
+{% include "_live_refresh.html" %}
+<script>
+/* Modal plumbing shared by every page: a .modal-overlay div toggled with the
+   `show` class (see templates/_modals.html). Escape closes the topmost. A page
+   that was redirected back after a validation failure carries ?open=<id> so
+   the modal the analyst was in reopens with the flash visible. */
+function openModal(id) { var el = document.getElementById(id); if (el) { el.classList.add('show'); var f = el.querySelector('input:not([type=hidden]):not([readonly]), select, textarea'); if (f) { try { f.focus(); } catch (e) {} } } }
+function closeModal(id) { var el = document.getElementById(id); if (el) { el.classList.remove('show'); } }
+document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') { return; }
+    var open = document.querySelectorAll('.modal-overlay.show');
+    if (open.length) { open[open.length - 1].classList.remove('show'); }
+});
+document.addEventListener('click', function (e) {
+    if (e.target.classList && e.target.classList.contains('modal-overlay')) { e.target.classList.remove('show'); }
+});
+(function () {
+    var p = new URLSearchParams(location.search).get('open');
+    if (p) { openModal(p); }
+})();
+</script>
+{% block extra_js %}{% endblock %}
+</body>
+</html>

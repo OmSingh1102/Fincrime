@@ -1,0 +1,47 @@
+{% extends "hub/base.html" %}
+{% from "hub/_macros.html" import badge, status_badge, dob_badge, conf, prio, pager with context %}
+{% block title %}Cases · {{ product }}{% endblock %}
+{% block content %}
+<div class="hx-head">
+    <div>
+        <div class="hx-eyebrow">Cases</div>
+        <h1>The whole book</h1>
+        <p>Every case in the log, with what the agents made of it. The historical outcome column is the analyst's decision in the log - the ground truth the Accuracy page measures against, never an input to the agents.</p>
+    </div>
+</div>
+<div class="hx-card">
+    <form class="hx-filters" method="get" action="{{ url_for('hub.cases') }}">
+        <div class="hx-field"><label>Handled by</label>
+            <select class="hx-select hx-select-sm" name="status"><option value="">All</option>{% for k, v in group_label.items() %}<option value="{{ k }}" {% if f.status == k %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
+        <div class="hx-field"><label>Passport</label>
+            <select class="hx-select hx-select-sm" name="country"><option value="">All</option>{% for k, v in (('IN', 'India'), ('US', 'United States'), ('VN', 'Vietnam')) %}<option value="{{ k }}" {% if f.country == k %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
+        <div class="hx-field"><label>Historical outcome</label>
+            <select class="hx-select hx-select-sm" name="outcome"><option value="">All</option>{% for k, v in (('FP', 'False positive'), ('TP', 'True positive'), ('Escalated', 'Escalated'), ('Pending', 'Pending')) %}<option value="{{ k }}" {% if f.outcome == k %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
+        <div class="hx-field grow"><label>Search</label><input class="hx-input hx-input-sm" name="q" value="{{ f.q }}" placeholder="Case id, client, subject or category"></div>
+        <button class="hx-btn hx-btn-outline hx-btn-sm" type="submit">{{ icon('filter') }} Apply</button>
+        <a class="hx-btn hx-btn-ghost hx-btn-sm" href="{{ url_for('hub.cases') }}">Clear</a>
+    </form>
+    <div class="hx-card-body pad-0">
+        <table class="hx-table">
+            <thead><tr><th>Case</th><th>Client</th><th>Watchlist subject</th><th>Date of birth</th><th>Agent verdict</th><th>Status</th><th>Queue</th><th>Historical outcome</th></tr></thead>
+            <tbody>
+            {% for c in rows %}
+            <tr>
+                <td class="id"><a href="{{ url_for('hub.case', case_id=c.id) }}">{{ c.id }}</a></td>
+                <td class="name"><b>{{ c.identity.name.canonical }}</b><small>{{ c.country_name }} · {{ c.customer.risk }} risk{% if c.customer.corporate %} · corporate UBO{% elif c.customer.nri %} · NRI{% endif %}</small></td>
+                <td class="name"><b>{{ c.wc.name_raw }}</b><small>{{ c.wc.category }}</small></td>
+                <td>{{ dob_badge(c) }}</td>
+                <td>{{ conf(c.screening.confidence, settings.gate) }} <span class="hx-small">{{ c.screening.verdict }}</span></td>
+                <td>{{ status_badge(c) }}</td>
+                <td>{{ c.queue }} {% if c.group == 'human_open' %}{{ prio(c.priority) }}{% endif %}</td>
+                <td class="hx-muted hx-small">{{ c.history.disposition }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="8" class="hx-empty">Nothing matches these filters.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="hx-foot"><span>{{ total }} cases · page {{ page }} of {{ pages }}</span>{{ pager(page, pages, 'hub.cases', f) }}</div>
+</div>
+{% endblock %}

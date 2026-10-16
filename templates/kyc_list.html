@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+{% from "_badges.html" import status_badge, tag_chip, sla_chip, workflow_badge %}
+{% from "_pager.html" import pager %}
+{% block title %}Case List - Due Diligence (KYC/KYB){% endblock %}
+
+{% block content %}
+<div class="tabs chips">
+    <span class="tab chip active">Case List</span>
+    <span class="tab chip" title="Not part of this demo">Recheck List</span>
+    <span class="tab chip" title="Not part of this demo">Appeal List</span>
+    <button type="button" class="filters-toggle" id="filters-toggle" onclick="toggleFilters()" aria-expanded="true" aria-controls="filters-grid" title="Hide the filters">{{ icon('chevron-up') }} Filters</button>
+    {% if can_upload %}<a class="btn btn-primary btn-sm" id="upload-cases" href="{{ url_for('kyc_upload') }}" style="margin-left:8px">{{ icon('upload') }} Upload cases</a>{% endif %}
+</div>
+
+{# One GET form: the filters, the sort and the page live in the URL and run
+   on the server (fincrime/analytics/case_list.py), 100 rows a page. #}
+<form method="get" action="{{ url_for('kyc_list') }}" id="filters-card" class="card filters-card">
+    <input type="hidden" name="sort" id="f-sort" value="{{ query.sort }}">
+    <input type="hidden" name="priority" id="f-priority" value="{{ '1' if query.priority else '' }}">
+    <div class="card-body">
+        {% include "_filter_grid.html" %}
+        <div class="toolbar">
+            <button type="button" class="btn btn-primary btn-sm" onclick="toggleSort()" id="sort-btn">{% if query.sort == 'asc' %}&#8593; Oldest to Latest{% else %}{{ icon('chevron-down') }} Latest to Oldest{% endif %}</button>
+            <span class="rowcount" id="rowcount">{% if shown != total %}{{ shown }} of {{ total }} match{% endif %}</span>
+            <span class="small muted hidden" id="filters-summary"></span>
+            <div class="right">
+                <button type="button" class="btn btn-ghost btn-sm btn-icon" title="Download (not part of this demo)">{{ icon('download') }}</button>
+                <a class="btn btn-outline btn-sm" href="{{ url_for('kyc_list') }}">Clear</a>
+                <button type="button" class="btn btn-outline btn-sm" title="Bulk assign — select rows first" onclick="bulkAssign()">Assign</button>
+                <button type="submit" class="btn btn-primary btn-sm">Search</button>
+                <button type="button" class="btn btn-outline btn-sm" title="Not part of this demo">Tag {{ icon('chevron-down') }}</button>
+                <button type="button" class="btn {{ 'btn-primary' if query.priority else 'btn-outline' }} btn-sm" onclick="priorityOnly()" id="prio-btn">Priority Review</button>
+            </div>
+        </div>
+    </div>
+</form>
+
+<div class="card mt-12 pad-0">
+    <div class="tbl-scroll">
+        <table class="tbl" id="case-table">
+            <thead>
+            <tr>
+                <th style="width:28px"><input type="checkbox" id="check-all" onclick="checkAll(this)" aria-label="Select every case on this page"></th>
+                <th>Case ID</th>
+                <th>Client ID</th>
+                <th>Client Name</th>
+                <th>Date Of Birth</th>
+                <th>Status</th>
+                <th>Pending Reason</th>
+                <th>Workflow</th>
+                <th>Tag</th>
+                <th>Previous Reviewer</th>
+                <th>Current Reviewer</th>
+                <th>Vendor</th>
+                <th>SLA</th>
+                <th>Details</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for r in rows %}
+            <tr data-case-id="{{ r.id }}" data-status="{{ r.status }}" data-workflow="{{ r.workflow }}">
+                <td><input type="checkbox" class="row-check" value="{{ r.id }}" aria-label="Select {{ r.id }}"></td>
+                <td class="nowrap"><span class="cell-id">{{ r.id }}</span> {% for t in r.tags %}{{ tag_chip(t) }}{% endfor %}</td>
+                <td class="cell-id">{{ r.client_id }}</td>
+                <td class="nowrap strong">{{ r.name }}</td>
+                <td class="nowrap">{{ r.dob or '-' }}</td>
+                <td>{{ status_badge(r.status) }}</td>
+                <td>{{ r.pending_reason or '-' }}</td>
+                <td class="nowrap">{% if r.workflow %}{{ workflow_badge(r.workflow) }}{% else %}-{% endif %}</td>
+                <td>{% if r.tags %}{{ r.tags|join(', ') }}{% else %}-{% endif %}</td>
+                <td class="nowrap">{{ r.previous_reviewer or '-' }}</td>
+                <td class="nowrap">{% if r.mine %}<b>{{ r.current_reviewer }}</b>{% else %}{{ r.current_reviewer or '-' }}{% endif %}</td>
+                <td>{{ r.vendor or '-' }}</td>
+                <td>{{ sla_chip(r.sla) }}</td>
+                <td><a class="btn btn-outline btn-xs" href="{{ url_for('kyc_detail', case_id=r.id) }}">Details</a></td>
+            </tr>
+            {% else %}
+            <tr><td colspan="14"><div class="no-data">{{ icon('search') }}No case matches these filters</div></td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="table-foot">
+        <span>{% if shown %}{{ first }}&ndash;{{ last }} of {% endif %}Total: <b id="total-count">{{ shown }}</b></span>
+        {{ pager(pages) }}
+        <span>{{ per_page }} / Page</span>
+    </div>
+</div>
+
+{% from "_modals.html" import modal_open, modal_close %}
+{{ modal_open('bulk-assign', 'Assign selected cases', 'sm') }}
+<form method="post" action="{{ url_for('kyc_bulk_assign') }}" id="bulk-form">
+    <div class="modal-body">
+        <p class="small muted mb-8"><span id="bulk-count">0</span> case(s) selected.</p>
+        <div class="field"><label for="bulk-assignee">Assign to</label>
+            <select class="input" id="bulk-assignee" name="assignee" required>
+                {% for a in all_analysts %}<option value="{{ a.email }}">{{ a.name }} ({{ a.roles|join('/') }})</option>{% endfor %}
+            </select></div>
+        <div id="bulk-ids"></div>
+    </div>
+    <div class="modal-foot"><span class="spacer"></span>
+        <button type="button" class="btn btn-outline btn-sm" onclick="closeModal('bulk-assign')">Cancel</button>
+        <button type="submit" class="btn btn-primary btn-sm">Assign</button></div>
+</form>
+{{ modal_close() }}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    var form = document.getElementById('filters-card');
+    var rows = Array.prototype.slice.call(document.querySelectorAll('#case-table tbody tr[data-case-id]'));
+
+    function checkedStatuses() {
+        return Array.prototype.slice.call(document.querySelectorAll('.f-status:checked')).map(function (c) { return c.value; });
+    }
+    function paintStatusLabel() {
+        var s = checkedStatuses(), lab = document.getElementById('f-status-label');
+        lab.textContent = s.length ? s.join(', ') : 'Select status';
+        lab.className = s.length ? '' : 'placeholder';
+    }
+
+    // The filters run on the server. Search, or Enter in any box, submits
+    // the form and starts again at page 1; the sort and Priority Review flip
+    // a hidden field and submit.
+    window.filterRows = function () { form.submit(); };
+    window.toggleSort = function () {
+        var s = document.getElementById('f-sort');
+        s.value = s.value === 'asc' ? 'desc' : 'asc';
+        form.submit();
+    };
+    window.priorityOnly = function () {
+        var p = document.getElementById('f-priority');
+        p.value = p.value === '1' ? '' : '1';
+        form.submit();
+    };
+    window.checkAll = function (box) {
+        rows.forEach(function (r) { r.querySelector('.row-check').checked = box.checked; });
+    };
+    window.bulkAssign = function () {
+        var ids = Array.prototype.slice.call(document.querySelectorAll('.row-check:checked')).map(function (c) { return c.value; });
+        if (!ids.length) { alert('Select at least one case first.'); return; }
+        var holder = document.getElementById('bulk-ids'); holder.innerHTML = '';
+        ids.forEach(function (id) { var i = document.createElement('input'); i.type = 'hidden'; i.name = 'case_id'; i.value = id; holder.appendChild(i); });
+        document.getElementById('bulk-count').textContent = ids.length;
+        openModal('bulk-assign');
+    };
+
+    document.querySelectorAll('.f-status').forEach(function (c) { c.addEventListener('change', paintStatusLabel); });
+    document.addEventListener('click', function (e) {
+        var box = document.getElementById('f-status-box');
+        if (box && box.open && !box.contains(e.target)) { box.removeAttribute('open'); }
+    });
+    paintStatusLabel();
+
+    // ── the filter panel folds behind the arrow at its top right ──
+    // The fold is remembered in this browser (the live refresh reloads the
+    // page, so without memory every update would unfold it). A folded panel
+    // still says how many filters are active, so nobody wonders why rows are
+    // missing. Clear and Search keep working while it is folded.
+    var FOLD_KEY = 'fcc-case-filters-folded';
+    var card = form, toggle = document.getElementById('filters-toggle');
+    var summary = document.getElementById('filters-summary');
+    function activeFilters() {
+        var n = 0;
+        document.querySelectorAll('#filters-grid input, #filters-grid select').forEach(function (el) {
+            if (el.type === 'checkbox') { if (el.checked) { n += 1; } }
+            else if ((el.value || '').trim()) { n += 1; }
+        });
+        return n;
+    }
+    function paintFold() {
+        var folded = card.classList.contains('folded'), n = activeFilters();
+        toggle.classList.toggle('folded', folded);
+        toggle.setAttribute('aria-expanded', folded ? 'false' : 'true');
+        toggle.title = folded ? 'Show the filters' : 'Hide the filters';
+        summary.textContent = folded ? ('Filters hidden' + (n ? ' · ' + n + ' active' : '')) : '';
+        summary.classList.toggle('hidden', !folded);
+    }
+    window.toggleFilters = function () {
+        card.classList.toggle('folded');
+        try { localStorage.setItem(FOLD_KEY, card.classList.contains('folded') ? '1' : '0'); } catch (e) { /* no storage: still folds */ }
+        paintFold();
+    };
+    try { if (localStorage.getItem(FOLD_KEY) === '1') { card.classList.add('folded'); } } catch (e) { /* no storage */ }
+    paintFold();
+})();
+</script>
+{% endblock %}

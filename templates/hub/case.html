@@ -1,0 +1,227 @@
+{% extends "hub/base.html" %}
+{% from "hub/_macros.html" import badge, status_badge, dob_badge, reason, prio, conf, score, trail, thumb with context %}
+{% from "hub/_icons.html" import hicon %}
+{% from "_viewer.html" import viewer_tools %}
+{% block title %}{{ c.id }} · {{ product }}{% endblock %}
+{% block content %}
+{% set idn = c.identity.name %}{% set adr = c.identity.address %}{% set sc = c.screening %}{% set it = c.intake %}
+<div class="hx-crumbs"><a href="{{ url_for('hub.cases') }}">Cases</a> / {{ c.id }}</div>
+<div class="hx-head">
+    <div>
+        <h1>{{ idn.canonical }}</h1>
+        <p>{{ c.id }} · {{ c.country_name }} passport {{ c.documents.passport.number }} · {{ c.customer.type }}{% if c.customer.corporate %} ({{ c.customer.name }}){% endif %} · born {{ c.customer.dob }} · {{ badge(c.customer.risk ~ ' risk', 'critical' if c.customer.risk == 'High' else 'warning' if c.customer.risk == 'Medium' else 'neutral') }}</p>
+    </div>
+    <div class="hx-actions">
+        {{ status_badge(c) }}
+        {% if c.queue %}<span class="hx-badge hx-badge-outline">{{ c.queue }}</span>{% endif %}
+        {% if c.group == 'human_open' %}{{ prio(c.priority) }}<span class="hx-small hx-muted" title="{{ c.due_at|hub_dt }}">{% if c.due_at < now %}SLA breached{% else %}SLA {{ c.due_at|hub_left }} left{% endif %}</span>{% endif %}
+    </div>
+</div>
+
+<div class="hx-grid wide-left">
+<div>
+    <div class="hx-card">
+        <div class="hx-card-head"><div><h2>{{ hicon('route') }} Agent trail</h2><div class="hx-sub">Four rule-based agents at intake{% if c.trail|selectattr('kind', 'equalto', 'claude')|list %}, then Claude on demand{% endif %}. Open a step for its reasons and what it read.</div></div></div>
+        <div class="hx-card-body">{{ trail(c.trail) }}</div>
+    </div>
+
+    <div class="hx-card">
+        <div class="hx-card-head"><div><h2>{{ hicon('id-card') }} Identity across the documents</h2><div class="hx-sub">The Identity Normalisation Agent screens the passport name and keeps every other form as an AKA.</div></div></div>
+        <div class="hx-card-body pad-0">
+            <table class="hx-identity">
+                <thead><tr><th>Source</th><th>Name</th><th>Date of birth</th><th>Address</th></tr></thead>
+                <tbody>
+                <tr class="canon"><td>Screened as</td><td>{{ idn.canonical }}{% if idn.aka %}<span class="src">AKA {% for a in idn.aka %}{{ a.name }} ({{ a.source }}){% if not loop.last %} · {% endif %}{% endfor %}</span>{% endif %}</td><td>{{ c.customer.dob }}</td><td>{{ adr.current.display or '-' }}<span class="src">{{ 'reconciled across documents' if adr.resolved else 'not reconciled' }}</span></td></tr>
+                <tr><td>CRM record<span class="src">as keyed at onboarding</span></td><td class="hx-diff">{% if c.customer.corporate %}{{ c.customer.ubo }} <span class="src">UBO of {{ c.customer.name }}</span>{% else %}{{ c.customer.name }}{% endif %}{% if idn.sources.crm_repaired %}<span class="src">repaired: {{ idn.sources.crm_repaired }}</span>{% endif %}</td><td>{{ c.customer.dob }}</td><td>{{ c.customer.address }}</td></tr>
+                <tr><td>Passport VIZ<span class="src">visual zone</span></td><td>{{ c.documents.passport.viz.surname or '(blank)' }} | {{ c.documents.passport.viz.given }}</td><td>{{ c.customer.dob }}</td><td>{% if c.documents.passport.address.printed %}{{ c.documents.passport.address.text }}{% else %}<span class="hx-muted">{{ c.documents.passport.address.note }}</span>{% endif %}</td></tr>
+                <tr><td>Passport MRZ<span class="src">line 1</span></td><td class="mono">{{ c.documents.passport.mrz.line1 }}</td><td class="hx-muted">in line 2</td><td class="hx-muted">-</td></tr>
+                <tr><td>{{ c.documents.secondary.type }}</td><td>{{ c.documents.secondary.name or '-' }}</td><td class="hx-muted">-</td><td>{% if c.documents.secondary.address.printed %}{{ c.documents.secondary.address.text }}{% else %}<span class="hx-muted">{{ c.documents.secondary.address.note }}</span>{% endif %}</td></tr>
+                <tr><td>{{ c.documents.poa.type }}<span class="src">proof of address · issued {{ c.synth.poa_issued_on }}</span></td><td class="hx-muted">-</td><td class="hx-muted">-</td><td>{{ c.documents.poa.address }}</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="hx-card-body">
+            {% if idn.changes or adr.changes %}
+            <h3 class="hx-mb-12">What changed, and why</h3>
+            <ul class="hx-changes">
+                {% for ch in idn.changes %}<li><b>{{ ch.rule }}</b><span>{% if ch.from %}<span class="hx-diff"><del>{{ ch.from }}</del></span> {% endif %}{% if ch.to %}<span class="hx-diff"><ins>{{ ch.to }}</ins></span>{% endif %}{% if ch.note %}<small>{{ ch.note }}</small>{% endif %}</span></li>{% endfor %}
+                {% for ch in adr.changes %}<li><b>Address</b><span>{{ ch }}</span></li>{% endfor %}
+            </ul>
+            {% else %}
+            <p class="hx-note">The CRM record, the passport and the secondary ID agree; nothing to repair.</p>
+            {% endif %}
+            {% if c.identity.variance_detected %}<div class="hx-row hx-mt-12">{% for v in c.identity.variance_detected %}{{ badge(v, 'brand') }}{% endfor %}</div>{% endif %}
+        </div>
+    </div>
+
+    <div class="hx-card">
+        <div class="hx-card-head"><div><h2>{{ icon('shield') }} Watchlist comparison</h2><div class="hx-sub">The Watchlist Adjudication Agent, field by field. The record's date of birth is read from the record, not from any annotation.</div></div></div>
+        <div class="hx-card-body pad-0">
+            <table class="hx-compare">
+                <thead><tr><th>Field</th><th>Client</th><th>Watchlist record</th><th>Finding</th></tr></thead>
+                <tbody>
+                <tr><td class="field">Name</td><td>{{ idn.canonical }}{% if idn.aka %}<div class="hx-small hx-muted">AKA {{ idn.aka|map(attribute='name')|join(' · ') }}</div>{% endif %}</td><td>{{ c.wc.name_raw }}</td><td>{{ score(sc.name.score) }}<div class="hx-small">{{ sc.name.facts|join(' ') }}</div></td></tr>
+                <tr><td class="field">Date of birth</td><td>{{ c.customer.dob }}</td><td>{{ c.wc.dob.raw.split(' (')[0] }}</td><td>{{ dob_badge(c) }}<div class="hx-small">{{ sc.dob.detail }}</div></td></tr>
+                <tr><td class="field">Place</td><td>{{ adr.current.display or c.customer.address }}</td><td>{{ c.wc.location.raw }}</td><td>{{ badge(sc.place.state, 'good' if sc.place.state == 'agree' else 'neutral') }}<div class="hx-small">{{ sc.place.detail }}</div></td></tr>
+                <tr><td class="field">List</td><td class="hx-muted">-</td><td>{{ c.wc.category }}<div class="hx-small hx-muted">{{ c.wc.uid }} · vendor score {{ c.wc.score }}% · matched on {{ c.wc.matched_attributes }}</div></td><td>{{ badge(c.wc.group, 'critical' if c.wc.group == 'Sanctions' else 'serious' if c.wc.group in ('PEP', 'Law Enforcement') else 'neutral') }}</td></tr>
+                <tr><td class="field">Narrative</td><td class="hx-muted">-</td><td colspan="2">{{ c.wc.narrative }}</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="hx-card-body">
+            {% set tone = 'good' if sc.decision == 'auto_clear' else 'serious' if sc.decision == 'auto_confirm' else 'warning' %}
+            <div class="hx-verdict {{ tone }}">
+                <div class="big">{{ sc.confidence }}%</div>
+                <div>
+                    <b>{{ sc.verdict|capitalize }} · {{ {'auto_clear': 'cleared by the agent', 'auto_confirm': 'confirmed match, for a person to decide', 'needs_review': 'needs a person'}[sc.decision] }}</b>
+                    <span class="hx-small">Suggested outcome {{ sc.suggested }} · gate {{ sc.gate }} · {{ reason(sc.reason_code) }}{% if sc.hard_stops %} · {{ sc.hard_stops|join(', ')|replace('_', ' ') }}{% endif %}</span>
+                    <ul>{% for r in sc.reasons %}<li>{{ r }}</li>{% endfor %}</ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="hx-card">
+        <div class="hx-card-head"><div><h2>{{ icon('file-text') }} Documents</h2><div class="hx-sub">Synthetic specimens; the checks the Document Intake Agent runs on them are real. Click to open the viewer.</div></div>
+            <div>{% if it.decision == 'Accept' %}{{ badge('Accepted', 'good') }}{% elif it.decision == 'Reject' %}{{ badge('Returned to customer', 'info') }}{% else %}{{ badge('Fraud referral', 'critical') }}{% endif %}</div></div>
+        <div class="hx-card-body">
+            <div class="hx-doc-grid">{% for f in c.files %}{{ thumb(c, f) }}{% endfor %}</div>
+            {% set step = (c.trail|selectattr('agent', 'equalto', 'intake')|list|first) %}
+            {% if step and step.findings %}<ul class="hx-findings hx-mt-16">{% for fd in step.findings %}<li class="{{ fd.tone }}"><span class="code">{{ fd.code }}</span><span>{{ fd.text }}</span></li>{% endfor %}</ul>{% endif %}
+            {% if c.customer_message %}<div class="hx-message hx-mt-16"><span class="to">Message to the customer{% if c.status == triage.STATUS_AUTO_RFI %} (request for information){% endif %}</span>{{ c.customer_message }}</div>{% endif %}
+            {% if not closed and (it.decision in ('Reject', 'Refer') or c.customer_message) %}
+            <div class="hx-row hx-mt-12">
+                {% if it.decision in ('Reject', 'Refer') %}<form method="post" action="{{ url_for('hub.case_intake', case_id=c.id) }}"><input type="hidden" name="action" value="accept"><button class="hx-btn hx-btn-outline hx-btn-sm">{{ icon('check') }} Accept the documents (override)</button></form>{% endif %}
+                {% if c.customer_message %}<form method="post" action="{{ url_for('hub.case_intake', case_id=c.id) }}"><input type="hidden" name="action" value="resend"><button class="hx-btn hx-btn-outline hx-btn-sm">{{ icon('send') }} Re-send</button></form>{% endif %}
+                {% if it.decision != 'Refer' %}<form method="post" action="{{ url_for('hub.case_intake', case_id=c.id) }}"><input type="hidden" name="action" value="refer"><button class="hx-btn hx-btn-outline hx-btn-sm">{{ icon('flag') }} Refer as a fraud upload</button></form>{% endif %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<div>
+    <div class="hx-card">
+        <div class="hx-card-head"><div><h2>{{ hicon('hand') }} Decision</h2><div class="hx-sub">{{ hub_user.name }} · {{ hub_user.role_label }}</div></div></div>
+        <div class="hx-card-body">
+            {% if c.decision %}
+            <dl class="hx-kv">
+                <dt>Outcome</dt><dd><b>{{ c.decision.action }}</b>{% if c.decision.outcome %} · {{ c.decision.outcome }}{% endif %}</dd>
+                <dt>By</dt><dd>{{ c.decision.by }} · {{ c.decision.at|hub_dt }}</dd>
+                {% if c.decision.comment %}<dt>Comment</dt><dd>{{ c.decision.comment }}</dd>{% endif %}
+            </dl>
+            {% endif %}
+            {% if not closed %}
+            <form method="post" action="{{ url_for('hub.case_decide', case_id=c.id) }}" class="hx-mt-12" style="display: flex; flex-direction: column; gap: 10px">
+                <div class="hx-field"><label for="act">Record</label>
+                    <select class="hx-select" id="act" name="action" onchange="document.getElementById('act-help').textContent = this.options[this.selectedIndex].dataset.help">
+                        {% for key in allowed %}<option value="{{ key }}" data-help="{{ action_help[key] }}" {% if (key == 'clear' and sc.suggested == 'False Positive') or (key == 'confirm_edd' and sc.suggested == 'True Positive' and 'confirm_edd' in allowed) %}selected{% endif %}>{{ actions_spec[key].label }}</option>{% endfor %}
+                    </select>
+                    <span class="hx-help" id="act-help">{{ action_help[allowed[0]] }}</span>
+                </div>
+                <div class="hx-field"><label for="comment">Comment</label><textarea class="hx-textarea" id="comment" name="comment" placeholder="Why - this goes to the audit trail (and to the customer for an RFI)">{% if c.ai.narrative %}{{ c.ai.narrative.narrative }}{% if c.ai.narrative.regulatory_note %} {{ c.ai.narrative.regulatory_note }}{% endif %}{% endif %}</textarea>{% if c.ai.narrative %}<span class="hx-help">Prefilled with Claude's draft narrative; edit before recording.</span>{% endif %}</div>
+                <button type="submit" class="hx-btn hx-btn-primary">Record decision</button>
+                {% if hub_role == 'analyst' %}<span class="hx-help">Confirmed-match outcomes (EDD approve, reject, exit, block) need L2 Compliance or the Team Lead.</span>{% endif %}
+            </form>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="hx-card" id="claude">
+        <div class="hx-card-head"><div><h2>{{ hicon('sparkles') }} Claude agents</h2><div class="hx-sub">On demand, advisory. Reads the normalised case and the agents' findings - never the historical outcome.{% if llm.ready %} {{ llm.model }} via {{ llm.gateway }}, about 10–20 s a call.{% endif %}</div></div></div>
+        <div class="hx-card-body">
+            {% if claude_routes %}
+            {% for which, label, help in (('second_opinion', 'Second opinion on the match', 'Same person, different person or unclear, with the reasons.'), ('narrative', 'Draft the compliance narrative', 'A note in the register of the log, ready to edit into the decision comment.'), ('customer_message', 'Draft the customer message', 'A plain-English message for a document rejection or an RFI.')) %}
+            <form method="post" action="{{ url_for('hub.case_ai', case_id=c.id, which=which) }}" class="hx-mb-12" onsubmit="var b = this.querySelector('button'); b.textContent = 'Asking Claude…'; setTimeout(function () { b.disabled = true; }, 0);">
+                <button type="submit" class="hx-btn hx-btn-claude hx-btn-block" {% if not llm.ready %}disabled title="{{ llm.why }}"{% endif %}>{{ hicon('sparkles') }} {{ label }}</button>
+                <div class="hx-help hx-mt-8">{{ help }}</div>
+            </form>
+            {% endfor %}
+            {% if not llm.ready %}<p class="hx-note box accent">{{ llm.why }}</p>{% endif %}
+            {% else %}
+            <p class="hx-note box accent">The Claude agents arrive with the next build of the hub.</p>
+            {% endif %}
+            {% if c.ai.second_opinion %}{% set so = c.ai.second_opinion %}
+            <div class="hx-verdict {{ 'good' if so.verdict == 'different person' else 'serious' if so.verdict == 'same person' else 'warning' }} hx-mt-12">
+                <div class="big">{{ so.confidence }}%</div>
+                <div><b>Claude: {{ so.verdict }}</b><span class="hx-small">suggested {{ so.suggested_outcome }} · {{ so.model }} · {{ so.seconds }} s</span>
+                    <p class="hx-small hx-mt-8">{{ so.summary }}</p>
+                    <ul>{% for r in so.reasons %}<li>{{ r }}</li>{% endfor %}</ul>
+                    {% if so.missing_data %}<div class="hx-small hx-mt-8"><b>Missing:</b> {{ so.missing_data|join('; ') }}</div>{% endif %}
+                    {% if so.what_would_resolve %}<div class="hx-small"><b>Would resolve it:</b> {{ so.what_would_resolve|join('; ') }}</div>{% endif %}
+                </div>
+            </div>
+            {% endif %}
+            {% if c.ai.narrative %}<div class="hx-message hx-mt-12"><span class="to">Draft narrative · {{ c.ai.narrative.model }}</span>{{ c.ai.narrative.narrative }}{% if c.ai.narrative.regulatory_note %}
+
+{{ c.ai.narrative.regulatory_note }}{% endif %}</div>{% endif %}
+            {% if c.ai.customer_message %}<div class="hx-message hx-mt-12"><span class="to">Draft customer message · {{ c.ai.customer_message.model }}</span><b>{{ c.ai.customer_message.subject }}</b>
+
+{{ c.ai.customer_message.body }}</div>{% endif %}
+        </div>
+    </div>
+
+    <div class="hx-card">
+        <div class="hx-card-head"><div><h2>Historical record</h2><div class="hx-sub">What the analyst did in the log. Ground truth for measurement; the agents never read it.</div></div></div>
+        <div class="hx-card-body">
+            <details class="hx-history-drawer" {% if closed %}open{% endif %}>
+                <summary>{{ c.history.disposition }} · {{ c.history.analyst }} · {{ c.history.review_date }}</summary>
+                <dl class="hx-kv hx-mt-12">
+                    <dt>Handling time</dt><dd>{{ c.history.minutes }} min</dd>
+                    <dt>Notes</dt><dd>{{ c.history.notes }}</dd>
+                    <dt>Discrepancy</dt><dd>{{ c.history.discrepancy }}</dd>
+                    <dt>Name variance</dt><dd>{{ c.history.name_variance }}</dd>
+                    <dt>Address variance</dt><dd>{{ c.history.address_variance }}</dd>
+                    <dt>Pain point</dt><dd>{{ c.history.pain_point }}</dd>
+                    <dt>Resolution</dt><dd>{{ c.history.resolution }}</dd>
+                    <dt>Screening impact</dt><dd>{{ c.history.impact }}</dd>
+                    <dt>Score after</dt><dd>{{ c.history.score_after }}% (vendor {{ c.wc.score }}%)</dd>
+                </dl>
+            </details>
+        </div>
+    </div>
+
+    {% if playbook %}
+    <div class="hx-card">
+        <div class="hx-card-head"><div><h2>Playbook</h2><div class="hx-sub">The controls the variance reference recommends for what the agent found</div></div></div>
+        <div class="hx-card-body">
+            {% for p in playbook %}
+            <div class="hx-mb-12"><b class="hx-small">{{ p.variance }}</b><div class="hx-small hx-muted">{{ p.why }}</div><div class="hx-small"><b>Control:</b> {{ p.control }}</div></div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="hx-card">
+        <div class="hx-card-head"><div><h2>Audit</h2></div></div>
+        <div class="hx-card-body">
+            <ul class="hx-history">
+                {% for a in c.audit|reverse %}<li><span class="when">{{ a.at|hub_dt }}</span><span><b>{{ a.action }}</b> · {{ a.actor }}{% if a.detail %}<br><span class="hx-muted">{{ a.detail }}</span>{% endif %}</span></li>{% else %}<li class="hx-muted">Nothing beyond the agents' run yet.</li>{% endfor %}
+            </ul>
+        </div>
+    </div>
+</div>
+</div>
+
+<div class="modal-overlay" id="doc-viewer">
+    <div class="modal-box xl" role="dialog" aria-modal="true" aria-labelledby="doc-viewer-title">
+        <div class="modal-head"><div class="modal-title" id="doc-viewer-title">Document</div><button type="button" class="modal-x" onclick="closeModal('doc-viewer')" aria-label="Close">&times;</button></div>
+        <div class="modal-body">
+            <div class="viewer-stage" id="hub-stage" tabindex="0"><img src="" alt="Document">{{ viewer_tools('') }}</div>
+            <p class="hx-note hx-mt-8">Scroll to zoom, drag to pan, double-click to zoom in or fit; + - 0 and the arrow keys once the panel has focus.</p>
+        </div>
+    </div>
+</div>
+{% include "_viewer.html" %}
+{% endblock %}
+{% block extra_js %}
+<script>
+window.hubView = function (src, label) {
+    var stage = document.getElementById('hub-stage');
+    document.getElementById('doc-viewer-title').textContent = label;
+    window.viewerInit(stage).show(src);
+    openModal('doc-viewer');
+    try { stage.focus(); } catch (e) {}
+};
+</script>
+{% endblock %}

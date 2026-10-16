@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign in · {{ product }}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/hub.css') }}">
+</head>
+<body class="hub">
+<div class="hx-auth">
+    <div class="hx-auth-card">
+        <div class="hx-auth-brand">
+            <img src="{{ url_for('static', filename='img/straive-logo.png') }}" alt="Straive">
+            <span class="bar"></span>
+            <small>KYC Operations Hub</small>
+        </div>
+        <h1>{{ product }}</h1>
+        <div class="lead">{{ tagline }}. Pick the analyst to work as.</div>
+        {% if error %}<div class="hx-auth-error">&#9888; {{ error }}</div>{% endif %}
+        <form method="post" action="{{ url_for('hub.sign_in') }}">
+            <input type="hidden" name="next" value="{{ next }}">
+            <div class="hx-field">
+                <label for="analyst">Analyst</label>
+                <select class="hx-select" id="analyst" name="analyst" required>
+                    {% for a in hub_analysts %}
+                    <option value="{{ a.key }}" {% if a.key == selected %}selected{% endif %}>{{ a.name }} &mdash; {{ a.role_label }}</option>
+                    {% endfor %}
+                </select>
+                <span class="hx-help">Eight L1 analysts clear and escalate; J. Vance (L2) decides on confirmed matches; H. Pham (Team Lead) owns the agents' settings.</span>
+            </div>
+            <div class="hx-field">
+                <label for="password">Password</label>
+                <input class="hx-input" type="password" id="password" name="password" autocomplete="current-password" placeholder="Enter your password" required autofocus>
+            </div>
+            <button type="submit" class="hx-btn hx-btn-primary hx-btn-lg hx-btn-block">Sign in</button>
+        </form>
+        {% if demo_password %}<div class="hx-auth-hint">Demo password for every profile: <code>{{ demo_password }}</code></div>{% endif %}
+        <div class="hx-auth-foot">
+            Every person, company, document and watchlist record in this demo is fictional; the case book is a synthetic reconciliation log of 1,000 cases. Vendor names appear as labels only.
+            <div class="hx-mt-8"><a class="hx-auth-back" href="{{ url_for('portal') }}">&larr; Straive demo portal</a></div>
+        </div>
+    </div>
+</div>
+</body>
+</html>

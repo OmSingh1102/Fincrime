@@ -1,0 +1,115 @@
+{# ── Hub macros. Import with context: the badges read the tone maps the
+   blueprint injects (status_tone, dob_label, dob_tone, reason_label). ── #}
+{% from "hub/_icons.html" import hicon %}
+
+{% macro badge(text, tone='neutral', title='') -%}
+<span class="hx-badge hx-badge-{{ tone }}"{% if title %} title="{{ title }}"{% endif %}>{{ text }}</span>
+{%- endmacro %}
+
+{% macro status_badge(c) -%}
+{{ badge(c.status, status_tone.get(c.status, 'good' if c.status.startswith('Closed') else 'neutral')) }}
+{%- endmacro %}
+
+{% macro dob_badge(c) -%}
+{%- set cls = (c.screening.dob.class if c.screening and c.screening.dob else 'missing') -%}
+{{ badge(dob_label.get(cls, cls), dob_tone.get(cls, 'neutral'), c.screening.dob.detail if c.screening and c.screening.dob else '') }}
+{%- endmacro %}
+
+{% macro reason(code) -%}{{ reason_label.get(code, code or '-') }}{%- endmacro %}
+
+{% macro prio(p) -%}<span class="hx-prio hx-prio-{{ p }}">{{ p }}</span>{%- endmacro %}
+
+{% macro conf(n, gate) -%}
+{%- if n is none -%}<span class="hx-muted">-</span>{%- else -%}
+<span class="hx-conf hx-conf-{{ 'high' if n >= gate else 'mid' if n >= 60 else 'low' }}" title="Confidence {{ n }} against a gate of {{ gate }}">{{ n }}%</span>
+{%- endif -%}
+{%- endmacro %}
+
+{% macro score(value) -%}
+{%- set p = ((value or 0) * 100)|round|int -%}
+<span class="hx-score" title="Name similarity {{ p }}%"><i style="--w: {{ p }}%"></i><b>{{ p }}%</b></span>
+{%- endmacro %}
+
+{% macro kpi(label, value, sub='', tone='', unit='') -%}
+<div class="hx-kpi{% if tone %} hx-kpi-{{ tone }}{% endif %}">
+    <div class="hx-kpi-label">{{ label }}</div>
+    <div class="hx-kpi-value">{{ value }}{% if unit %}<small>{{ unit }}</small>{% endif %}</div>
+    {% if sub %}<div class="hx-kpi-sub">{{ sub }}</div>{% endif %}
+</div>
+{%- endmacro %}
+
+{% macro meter(pct, label, slot='s1') -%}
+{%- set dash = (pct / 100.0 * 326.7)|round(1) -%}
+<div class="hx-meter" role="img" aria-label="{{ label }} {{ pct }}%">
+    <svg viewBox="0 0 120 120"><circle class="track" cx="60" cy="60" r="52"/><circle class="arc {{ slot }}" cx="60" cy="60" r="52" stroke-dasharray="{{ dash }} 326.7"/></svg>
+    <div class="lbl">{{ pct|round|int }}%<small>{{ label }}</small></div>
+</div>
+{%- endmacro %}
+
+{% macro stack(segments) -%}
+<div class="hx-stack" role="img" aria-label="How the cases divide">
+    {% for s in segments %}<span class="hx-seg {{ s.slot }}{% if 'human' in s.who %} human{% endif %}" style="flex: {{ s.n }} 1 0" title="{{ s.label }}: {{ s.n }} ({{ s.pct }}%)">{% if s.pct >= 8 %}{{ s.pct|round|int }}%{% endif %}</span>{% endfor %}
+</div>
+<ul class="hx-legend">
+    {% for s in segments %}<li><span class="sw {{ s.slot }}{% if 'human' in s.who %} human{% endif %}"></span><span>{{ s.label }} <span class="who">· {{ s.who }}</span></span><span class="n">{{ s.n }} · {{ s.pct }}%</span></li>{% endfor %}
+</ul>
+{%- endmacro %}
+
+{% macro cols(rows, value_key, label_key, max_value, slot='s1', suffix='') -%}
+<div class="hx-cols">
+    {% for r in rows %}<div class="hx-col {{ slot }}"><b>{{ r[value_key] }}{{ suffix }}</b><i style="--h: {{ ((r[value_key] / max_value) * 100) if max_value else 0 }}%"></i></div>{% endfor %}
+</div>
+<div class="hx-col-labels">{% for r in rows %}<span>{{ r[label_key] }}</span>{% endfor %}</div>
+{%- endmacro %}
+
+{% macro bars(rows, label_key, value_key, max_value, slot='s1') -%}
+<div class="hx-bars">
+    {% for r in rows %}<span>{{ r[label_key] }}</span><span class="bar {{ slot }}"><i style="--w: {{ ((r[value_key] / max_value) * 100) if max_value else 0 }}%"></i></span><span class="n">{{ r[value_key] }}</span>{% endfor %}
+</div>
+{%- endmacro %}
+
+{% macro finding_icon(tone) -%}
+{%- if tone == 'good' %}{{ icon('check-circle') }}{% elif tone in ('serious', 'critical') %}{{ icon('alert-triangle') }}{% elif tone == 'warning' %}{{ icon('alert-circle') }}{% else %}{{ icon('info') }}{% endif -%}
+{%- endmacro %}
+
+{% macro trail(steps) -%}
+<ol class="hx-timeline">
+    {% for s in steps %}
+    <li class="hx-step{% if s.kind == 'claude' %} claude{% elif s.decision == 'Skipped' %} skipped{% endif %}">
+        <span class="dot"></span>
+        <div class="head"><b>{{ s.label }}</b>
+            {% if s.confidence is not none and s.decision != 'Skipped' %}{{ conf(s.confidence, settings.gate) }}{% endif %}
+            {% if s.needs_human %}{{ badge('human in the loop', 'accent') }}{% endif %}
+            <span class="when">{{ s.at|hub_dt }} · {{ s.elapsed_ms }} ms{% if s.model %} · {{ s.model }}{% endif %}</span>
+        </div>
+        <div class="verdict">{{ s.decision }}{% if s.reason_code %} <span class="hx-muted hx-small">· {{ reason(s.reason_code) if s.reason_code in reason_label else s.reason_code }}</span>{% endif %}</div>
+        {% if s.findings %}
+        <ul>{% for f in s.findings %}<li class="{{ f.tone }}">{{ finding_icon(f.tone) }}<span>{{ f.text }}</span></li>{% endfor %}</ul>
+        {% endif %}
+        {% if s.reasons or s.inputs %}
+        <details><summary>Why, and what it read</summary>
+            {% if s.reasons %}<ul class="reasons">{% for r in s.reasons %}<li>{{ r }}</li>{% endfor %}</ul>{% endif %}
+            {% if s.inputs %}<div class="inputs">{% for k, v in s.inputs.items() %}{{ k }}: {{ v }}
+{% endfor %}</div>{% endif %}
+        </details>
+        {% endif %}
+    </li>
+    {% endfor %}
+</ol>
+{%- endmacro %}
+
+{% macro thumb(c, f) -%}
+<button type="button" class="hx-thumb" onclick="hubView('{{ url_for('hub.file_svg', case_id=c.id, file_id=f.id) }}', {{ f.label|tojson }})">
+    <img src="{{ url_for('hub.file_svg', case_id=c.id, file_id=f.id) }}" alt="{{ f.label }}">
+    <span>{{ f.label }}</span>
+    {% for d in f.defects %}<em class="{{ 'critical' if d == 'tampered' else '' }}">{{ d.replace('_', ' ') }}</em>{% endfor %}
+</button>
+{%- endmacro %}
+
+{% macro pager(page, pages, endpoint, args) -%}
+<div class="hx-pager">
+    <a href="{{ url_for(endpoint, page=page-1, **args) }}" class="{{ 'dis' if page <= 1 else '' }}">&lsaquo;</a>
+    {% for p in range(1, pages + 1) %}{% if p <= 3 or p > pages - 2 or (p >= page - 1 and p <= page + 1) %}<a href="{{ url_for(endpoint, page=p, **args) }}" class="{{ 'on' if p == page else '' }}">{{ p }}</a>{% elif p == 4 or p == pages - 2 %}<span>…</span>{% endif %}{% endfor %}
+    <a href="{{ url_for(endpoint, page=page+1, **args) }}" class="{{ 'dis' if page >= pages else '' }}">&rsaquo;</a>
+</div>
+{%- endmacro %}

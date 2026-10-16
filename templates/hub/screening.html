@@ -1,0 +1,94 @@
+{% extends "hub/base.html" %}
+{% from "hub/_macros.html" import badge, status_badge, dob_badge, reason, prio, conf, score with context %}
+{% from "hub/_icons.html" import hicon %}
+{% block title %}Screening review · {{ product }}{% endblock %}
+{% block content %}
+<div class="hx-head">
+    <div>
+        <div class="hx-eyebrow">Screening review</div>
+        <h1>What the agents hand to a person</h1>
+        <p>The 30% side of the split: records the Watchlist Adjudication Agent would not clear or confirm on the data, plus every sanctions hit and every fraud referral. Confirmed matches sit here too, routed to L2 or EDD for the relationship decision. Tick several rows to record one outcome for all of them.</p>
+    </div>
+    <div class="hx-actions"><span class="hx-badge hx-badge-accent">{{ total }} open for a person</span></div>
+</div>
+
+<div class="hx-card">
+    <form class="hx-filters" method="get" action="{{ url_for('hub.screening') }}">
+        <div class="hx-field"><label>Reason</label>
+            <select class="hx-select hx-select-sm" name="reason"><option value="">All</option>{% for r in options.reasons %}<option value="{{ r }}" {% if f.reason == r %}selected{% endif %}>{{ reason(r) }}</option>{% endfor %}</select></div>
+        <div class="hx-field"><label>Queue</label>
+            <select class="hx-select hx-select-sm" name="queue"><option value="">All</option>{% for q in options.queues %}<option value="{{ q }}" {% if f.queue == q %}selected{% endif %}>{{ q }}</option>{% endfor %}</select></div>
+        <div class="hx-field"><label>Priority</label>
+            <select class="hx-select hx-select-sm" name="priority"><option value="">All</option>{% for p in ('P1', 'P2', 'P3') %}<option value="{{ p }}" {% if f.priority == p %}selected{% endif %}>{{ p }}</option>{% endfor %}</select></div>
+        <div class="hx-field"><label>Watchlist</label>
+            <select class="hx-select hx-select-sm" name="group"><option value="">All</option>{% for g in options.groups %}<option value="{{ g }}" {% if f.group == g %}selected{% endif %}>{{ g }}</option>{% endfor %}</select></div>
+        <div class="hx-field"><label>Passport</label>
+            <select class="hx-select hx-select-sm" name="country"><option value="">All</option>{% for k, v in (('IN', 'India'), ('US', 'United States'), ('VN', 'Vietnam')) %}<option value="{{ k }}" {% if f.country == k %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
+        <div class="hx-field grow"><label>Search</label><input class="hx-input hx-input-sm" name="q" value="{{ f.q }}" placeholder="Case id, client or subject"></div>
+        <button class="hx-btn hx-btn-outline hx-btn-sm" type="submit">{{ icon('filter') }} Apply</button>
+        <a class="hx-btn hx-btn-ghost hx-btn-sm" href="{{ url_for('hub.screening') }}">Clear</a>
+    </form>
+    <form method="post" action="{{ url_for('hub.screening_bulk') }}" id="bulk-form" onsubmit="return hubBulk(this)">
+        <div class="hx-bulk">
+            <b id="pick-count">Nothing ticked</b>
+            <select class="hx-select hx-select-sm" name="action" aria-label="Outcome">
+                {% for key, spec in actions_spec.items() %}{% if hub_role in spec.roles %}<option value="{{ key }}">{{ spec.label }}</option>{% endif %}{% endfor %}
+            </select>
+            <input class="hx-input hx-input-sm" name="comment" placeholder="Comment (the message, for an RFI)" style="flex: 1; min-width: 220px">
+            <button type="submit" class="hx-btn hx-btn-primary hx-btn-sm">{{ hicon('check-square') }} Apply to ticked</button>
+            <div id="pick-ids"></div>
+        </div>
+    </form>
+    <div class="hx-card-body pad-0">
+        <table class="hx-table" id="review-table">
+            <thead><tr>
+                <th class="pick"><input type="checkbox" id="pick-all" onchange="hubPickAll(this)" aria-label="Tick every case shown"></th>
+                <th>Case</th><th>Client</th><th>Watchlist subject</th><th>Date of birth</th><th>Name</th><th>Confidence</th><th>Why a person</th><th>Queue</th><th>SLA</th>
+            </tr></thead>
+            <tbody>
+            {% for c in rows %}
+            {% set sc = c.screening %}
+            <tr data-id="{{ c.id }}">
+                <td class="pick"><input type="checkbox" name="pick" value="{{ c.id }}" data-name="{{ c.identity.name.canonical }}" onchange="hubPick()"></td>
+                <td class="id"><a href="{{ url_for('hub.case', case_id=c.id) }}">{{ c.id }}</a><br>{{ prio(c.priority) }}</td>
+                <td class="name"><b>{{ c.identity.name.canonical }}</b><small>{% if c.customer.name != c.identity.name.canonical %}was: {{ c.customer.name }} · {% endif %}{{ c.customer.dob }} · {{ c.country_name }}{% if c.customer.corporate %} · UBO of {{ c.customer.name }}{% endif %}</small></td>
+                <td class="name"><b>{{ c.wc.name_raw }}</b><small>{{ c.wc.category }} · {{ c.wc.dob.raw.split(' (')[0] }} · {{ c.wc.location.raw }}</small></td>
+                <td>{{ dob_badge(c) }}</td>
+                <td>{{ score(sc.name.score) }}</td>
+                <td>{{ conf(sc.confidence, settings.gate) }}<div class="hx-small hx-muted">{{ sc.verdict }} · {{ sc.suggested }}</div></td>
+                <td>{{ reason(sc.reason_code) }}{% if sc.hard_stops %}<div class="hx-small hx-muted">{{ sc.hard_stops|join(', ')|replace('_', ' ') }}</div>{% endif %}</td>
+                <td>{{ c.queue }}{% if c.status != triage.STATUS_REVIEW %}<div>{{ status_badge(c) }}</div>{% endif %}</td>
+                <td class="hx-muted" title="Due {{ c.due_at|hub_dt }}">{% if c.due_at < now %}<span class="hx-badge hx-badge-critical">overdue</span>{% else %}{{ c.due_at|hub_left }} left{% endif %}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="10" class="hx-empty">Nothing matches these filters.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="hx-foot"><span>{{ rows|length }} of {{ total }} cases open for a person</span><span>Confidence is the agent's, against a gate of {{ settings.gate }}; the suggested outcome is advisory.</span></div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+(function () {
+    function boxes() { return Array.prototype.slice.call(document.querySelectorAll('#review-table input[name=pick]')); }
+    function picked() { return boxes().filter(function (b) { return b.checked; }); }
+    window.hubPick = function () {
+        var p = picked(), all = document.getElementById('pick-all'), shown = boxes();
+        document.getElementById('pick-count').textContent = p.length === 0 ? 'Nothing ticked' : p.length === 1 ? p[0].dataset.name : p.length + ' cases ticked';
+        all.checked = shown.length > 0 && shown.every(function (b) { return b.checked; });
+        all.indeterminate = !all.checked && shown.some(function (b) { return b.checked; });
+    };
+    window.hubPickAll = function (box) { boxes().forEach(function (b) { b.checked = box.checked; }); hubPick(); };
+    window.hubBulk = function (form) {
+        var p = picked(), holder = document.getElementById('pick-ids');
+        holder.innerHTML = '';
+        if (!p.length) { alert('Tick at least one case (the check box at the left of its row) first.'); return false; }
+        p.forEach(function (b) { var h = document.createElement('input'); h.type = 'hidden'; h.name = 'case_id'; h.value = b.value; holder.appendChild(h); });
+        return true;
+    };
+    hubPick();
+})();
+</script>
+{% endblock %}

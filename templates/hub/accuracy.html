@@ -1,0 +1,99 @@
+{% extends "hub/base.html" %}
+{% from "hub/_macros.html" import kpi, badge, status_badge, dob_badge, conf with context %}
+{% block title %}Accuracy · {{ product }}{% endblock %}
+{% block content %}
+{% set n = vm.numbers %}
+<div class="hx-head">
+    <div>
+        <div class="hx-eyebrow">Accuracy</div>
+        <h1>The agents against the analysts' record</h1>
+        <p>The log carries the disposition an analyst reached on every case. The agents never read it; it is the ground truth here. Precision of an auto-clear is what matters most: a record cleared by the agents that an analyst found to be a true match would be a miss nobody catches.</p>
+    </div>
+</div>
+
+<div class="hx-grid cols-4">
+    {{ kpi('Auto-clear precision', n.precision, n.precision_n|hub_num ~ ' of ' ~ n.auto_clear|hub_num ~ ' records the agents cleared were cleared by the analysts too', 'good', '%') }}
+    {{ kpi('True matches flagged', n.tp_recall, n.tp_flagged ~ ' of ' ~ n.tp_total ~ ' historical true positives called a confirmed match · ' ~ n.tp_cleared ~ ' cleared', '', '%') }}
+    {{ kpi('False positives cleared', n.fp_recall, n.fp_cleared|hub_num ~ ' of ' ~ n.fp_total|hub_num ~ ' historical false positives cleared without an analyst', '', '%') }}
+    {{ kpi('Edge cases held', n.held|hub_num, 'records the agents refused to decide on the data: transposed dates, year only, a range, no date', 'accent') }}
+</div>
+
+<div class="hx-grid wide-left">
+    <div class="hx-card">
+        <div class="hx-card-head"><div><h2>Agent decision against the historical outcome</h2><div class="hx-sub">Rows are what the Watchlist Adjudication Agent decided; columns are what the analyst recorded</div></div></div>
+        <div class="hx-card-body">
+            <table class="hx-matrix">
+                <thead><tr><th></th>{% for h in vm.history_cols %}<th>{{ h }}</th>{% endfor %}<th>Total</th></tr></thead>
+                <tbody>
+                {% for r in vm.matrix %}
+                <tr><th class="row">{{ r.label }}</th>
+                    {% for v in r.cells %}{% set bad = (r.key == 'auto_clear' and loop.index0 == 1) %}<td class="{{ 'bad' if (bad and v) else 't4' if v >= 300 else 't3' if v >= 100 else 't2' if v >= 20 else 't1' if v else '' }}">{{ v }}{% if bad %}<small>{{ 'none' if not v else 'missed' }}</small>{% endif %}</td>{% endfor %}
+                    <td>{{ r.total }}</td></tr>
+                {% endfor %}
+                <tr><th class="row">Total</th>{% for t in vm.totals %}<td>{{ t }}</td>{% endfor %}<td>{{ vm.totals|sum }}</td></tr>
+                </tbody>
+            </table>
+            <p class="hx-note hx-mt-12">Historical escalations and pendings are human outcomes without a verdict: the right row for them is "human adjudication", and that is where the agents put nearly all of them.</p>
+        </div>
+    </div>
+    <div>
+        <div class="hx-card">
+            <div class="hx-card-head"><div><h2>What normalisation bought</h2></div></div>
+            <div class="hx-card-body">
+                <dl class="hx-kv">
+                    <dt>Resurfaced matches</dt><dd><b>{{ vm.resurfaced.flagged }} of {{ vm.resurfaced.n }}</b> true matches the log says surfaced only on a legal-name re-screen are flagged by the agents from the passport name.</dd>
+                    <dt>Addresses reconciled</dt><dd><b>{{ vm.reconciled.resolved }} of {{ vm.reconciled.n }}</b> cases the analysts delayed over an address are reconciled by the address toolkit.</dd>
+                    <dt>Analyst hours</dt><dd><b>{{ vm.saved.hours|hub_num }} h</b> of the {{ (vm.saved.total_minutes // 60)|hub_num }} h the log records are on cases the agents handled end to end.</dd>
+                </dl>
+            </div>
+        </div>
+        <div class="hx-card">
+            <div class="hx-card-head"><div><h2>By passport country</h2></div></div>
+            <div class="hx-card-body pad-0">
+                <table class="hx-table compact"><thead><tr><th>Country</th><th class="num">Cases</th><th class="num">AI-adjudicated</th><th class="num">No analyst</th></tr></thead>
+                <tbody>{% for r in vm.country_rows %}<tr><td>{{ r.country }}</td><td class="num">{{ r.n }}</td><td class="num">{{ r.adjudicated_pct }}%</td><td class="num">{{ r.automated_pct }}%</td></tr>{% endfor %}</tbody></table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="hx-card">
+    <div class="hx-card-head"><div><h2>By name variance</h2><div class="hx-sub">The historical variance label per case; "detected" is how often the Identity Normalisation Agent raised that same label from the documents alone</div></div></div>
+    <div class="hx-card-body pad-0">
+        <table class="hx-table compact">
+            <thead><tr><th>Variance in the log</th><th class="num">Cases</th><th class="num">AI-adjudicated</th><th class="num">No analyst</th><th class="num">Historical FPs cleared</th><th class="num">Detected by the agent</th><th class="num">Avg handling (log)</th></tr></thead>
+            <tbody>
+            {% for r in vm.variance_rows %}
+            <tr><td>{{ r.variance }}</td><td class="num">{{ r.n }}</td><td class="num">{{ r.adjudicated_pct }}%</td><td class="num">{{ r.automated_pct }}%</td><td class="num">{{ r.fp_cleared_pct ~ '%' if r.fp_cleared_pct is not none else '-' }}</td><td class="num">{{ r.detected_pct ~ '%' if r.detected_pct is not none else '-' }}</td><td class="num">{{ r.avg_minutes }} min</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="hx-grid cols-2">
+    <div class="hx-card">
+        <div class="hx-card-head"><div><h2>Edge cases held for a person</h2><div class="hx-sub">Day/month transpositions: a transposition, or two people born in the same year</div></div></div>
+        <div class="hx-card-body pad-0">
+            <table class="hx-table compact"><thead><tr><th>Case</th><th>Client · record</th><th>Dates</th><th>Confidence</th><th>Now</th><th>In the log</th></tr></thead>
+            <tbody>{% for c in vm.held %}<tr><td class="id"><a href="{{ url_for('hub.case', case_id=c.id) }}">{{ c.id }}</a></td><td class="name"><b>{{ c.identity.name.canonical }}</b><small>{{ c.wc.name_raw }}</small></td><td class="hx-small">{{ c.customer.dob }}<br>{{ c.wc.dob.date }}</td><td>{{ conf(c.screening.confidence, settings.gate) }}</td><td>{{ status_badge(c) }}</td><td class="hx-small hx-muted">{{ c.history.disposition }}</td></tr>{% endfor %}</tbody></table>
+        </div>
+    </div>
+    <div>
+        <div class="hx-card">
+            <div class="hx-card-head"><div><h2>True matches not flagged</h2><div class="hx-sub">Historical true positives the agent did not call a confirmed match - all held for a person, none cleared</div></div></div>
+            <div class="hx-card-body pad-0">
+                <table class="hx-table compact"><thead><tr><th>Case</th><th>Why</th><th>Now</th></tr></thead>
+                <tbody>{% for c in vm.missed %}<tr><td class="id"><a href="{{ url_for('hub.case', case_id=c.id) }}">{{ c.id }}</a></td><td class="hx-small">{{ dob_badge(c) }} {{ c.screening.verdict }}</td><td>{{ status_badge(c) }}</td></tr>{% else %}<tr><td colspan="3" class="hx-empty">Every historical true match is flagged.</td></tr>{% endfor %}</tbody></table>
+            </div>
+        </div>
+        <div class="hx-card">
+            <div class="hx-card-head"><div><h2>Clears without historical confirmation</h2><div class="hx-sub">Appear only when the gate is dragged below what the data supports</div></div></div>
+            <div class="hx-card-body pad-0">
+                <table class="hx-table compact"><thead><tr><th>Case</th><th>Agent</th><th>In the log</th></tr></thead>
+                <tbody>{% for c in vm.unverified %}<tr><td class="id"><a href="{{ url_for('hub.case', case_id=c.id) }}">{{ c.id }}</a></td><td>{{ conf(c.screening.confidence, settings.gate) }} {{ c.screening.verdict }}</td><td class="hx-small hx-muted">{{ c.history.disposition }}</td></tr>{% else %}<tr><td colspan="3" class="hx-empty">None: every auto-clear is a historical false positive.</td></tr>{% endfor %}</tbody></table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}{{ product }}{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/hub.css') }}">
+    {% block extra_css %}{% endblock %}
+</head>
+<body class="hub">
+{% from "hub/_icons.html" import hicon %}
+<div class="hx-app">
+    <header class="hx-top">
+        <a class="hx-brand" href="{{ url_for('hub.overview') }}">
+            <span class="hx-logo"><img src="{{ url_for('static', filename='img/straive-logo.png') }}" alt="Straive"></span>
+            <span class="hx-brand-text"><b>{{ product }}</b><small>{{ tagline }}</small></span>
+        </a>
+        <form class="hx-search" action="{{ url_for('hub.search') }}" method="get" role="search">
+            <input type="search" name="q" placeholder="Case id, name or subject" aria-label="Search cases" value="{{ request.args.get('q', '') if request.endpoint == 'hub.cases' else '' }}">
+            <button type="submit" aria-label="Search">{{ icon('search') }}</button>
+        </form>
+        <div class="hx-top-right">
+            <span class="hx-chip {{ 'hx-chip-good' if llm.ready else 'hx-chip-muted' }}" title="{{ llm.why or ('Claude ready: ' ~ llm.model ~ ' via ' ~ llm.gateway) }}">
+                {{ hicon('sparkles') }} {% if llm.ready %}Claude ready{% elif llm.configured %}Claude off{% else %}Claude not configured{% endif %}
+            </span>
+            {% if demo_mode %}
+            <form method="post" action="{{ url_for('hub.switch') }}" class="hx-inline">
+                <input type="hidden" name="next" value="{{ request.path }}">
+                <select name="analyst" class="hx-select hx-select-sm" onchange="this.form.submit()" aria-label="Switch analyst" title="Demo shortcut: work as another analyst">
+                    {% for a in hub_analysts %}<option value="{{ a.key }}" {% if a.key == hub_user.key %}selected{% endif %}>{{ a.name }} · {{ a.role_label }}</option>{% endfor %}
+                </select>
+            </form>
+            {% endif %}
+            <span class="hx-user"><span class="hx-avatar">{{ hub_user.name[:1] }}</span><span><b>{{ hub_user.name }}</b><small>{{ hub_user.role_label }}</small></span></span>
+            <form method="post" action="{{ url_for('hub.sign_out') }}" class="hx-inline">
+                <button type="submit" class="hx-btn hx-btn-ghost hx-btn-icon" title="Sign out" aria-label="Sign out">{{ icon('log-out') }}</button>
+            </form>
+        </div>
+    </header>
+    <div class="hx-body">
+        <aside class="hx-rail">
+            <nav aria-label="Hub">
+                {% for item in hub_nav %}
+                <a class="hx-nav {% if item.active %}active{% endif %}" href="{{ url_for(item.endpoint) }}">{{ hicon(item.icon) }}<span>{{ item.label }}</span>{% if item.count %}<em>{{ item.count }}</em>{% endif %}</a>
+                {% endfor %}
+            </nav>
+            <div class="hx-rail-foot">
+                <div class="hx-rail-note">1,000 synthetic cases · four rule-based agents at intake · Claude on demand from a case. Every person, company and watchlist record is fictional.</div>
+                {% if hub_role == 'lead' %}
+                <form method="post" action="{{ url_for('hub.reset') }}" onsubmit="return confirm('Reset the hub? Every decision and override is discarded and the agents run again.')">
+                    <button type="submit" class="hx-btn hx-btn-ghost hx-btn-sm">{{ icon('refresh-cw') }} Reset hub</button>
+                </form>
+                {% endif %}
+                <a class="hx-small" href="{{ url_for('portal') }}">&larr; Straive demo portal</a>
+            </div>
+        </aside>
+        <main class="hx-main">
+            <div class="hx-wrap">
+                {% include "_flashes.html" %}
+                {% block content %}{% endblock %}
+            </div>
+        </main>
+    </div>
+</div>
+{% include "_live_refresh.html" %}
+<script>
+/* Modal plumbing (same contract as the console's shells): a .modal-overlay
+   toggled with `show`; Escape closes the topmost; ?open=<id> reopens one. */
+function openModal(id) { var el = document.getElementById(id); if (el) { el.classList.add('show'); var f = el.querySelector('input:not([type=hidden]):not([readonly]), select, textarea'); if (f) { try { f.focus(); } catch (e) {} } } }
+function closeModal(id) { var el = document.getElementById(id); if (el) { el.classList.remove('show'); } }
+document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') { return; }
+    var open = document.querySelectorAll('.modal-overlay.show');
+    if (open.length) { open[open.length - 1].classList.remove('show'); }
+});
+document.addEventListener('click', function (e) {
+    if (e.target.classList && e.target.classList.contains('modal-overlay')) { e.target.classList.remove('show'); }
+});
+(function () { var p = new URLSearchParams(location.search).get('open'); if (p) { openModal(p); } })();
+</script>
+{% block extra_js %}{% endblock %}
+</body>
+</html>

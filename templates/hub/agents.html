@@ -1,0 +1,115 @@
+{% extends "hub/base.html" %}
+{% from "hub/_macros.html" import badge with context %}
+{% from "hub/_icons.html" import hicon %}
+{% block title %}Agents · {{ product }}{% endblock %}
+{% block content %}
+<div class="hx-head">
+    <div>
+        <div class="hx-eyebrow">Agents</div>
+        <h1>Five agents, one dial</h1>
+        <p>Four deterministic agents run over every case at intake; Claude runs on demand from a case. The team lead sets the confidence gate and the guards here, then re-runs the pipeline over every case nobody has decided - the split on the Overview moves with it.</p>
+    </div>
+    <div class="hx-actions">
+        {% if can_edit %}
+        <form method="post" action="{{ url_for('hub.agents_rerun') }}"><button type="submit" class="hx-btn hx-btn-accent">{{ hicon('play') }} Re-run the pipeline</button></form>
+        {% else %}
+        <span class="hx-note">Settings and re-runs are the team lead's (H. Pham).</span>
+        {% endif %}
+    </div>
+</div>
+
+<div class="hx-grid cols-4">
+    <div class="hx-kpi hx-kpi-good"><div class="hx-kpi-label">Last run</div><div class="hx-kpi-value">{{ last_run.adjudicated_pct }}<small>%</small></div><div class="hx-kpi-sub">AI-adjudicated at gate {{ last_run.gate }} · {{ last_run.automated_pct }}% without an analyst · {{ last_run.ran|hub_num }} cases in {{ last_run.seconds }} s · {{ last_run.at|hub_dt }}{% if last_run.reason %} ({{ last_run.reason }}){% endif %}</div></div>
+    <div class="hx-kpi"><div class="hx-kpi-label">Cleared by the agents</div><div class="hx-kpi-value">{{ split.auto_clear|hub_num }}</div><div class="hx-kpi-sub">records cleared as a different person above the gate</div></div>
+    <div class="hx-kpi"><div class="hx-kpi-label">Confirmed for a person</div><div class="hx-kpi-value">{{ split.tp_flag|hub_num }}</div><div class="hx-kpi-sub">confirmed matches routed to L2 or EDD</div></div>
+    <div class="hx-kpi hx-kpi-accent"><div class="hx-kpi-label">Held for adjudication</div><div class="hx-kpi-value">{{ (split.inconclusive + split.sanctions + split.fraud + split.below_gate)|hub_num }}</div><div class="hx-kpi-sub">{{ split.inconclusive }} inconclusive · {{ split.sanctions }} sanctions guard · {{ split.fraud }} fraud referrals · {{ split.below_gate }} below the gate</div></div>
+</div>
+
+<div class="hx-grid cols-3">
+    {% for st in stats %}{% set a = st.agent %}
+    <div class="hx-card hx-agent-card">
+        <div class="top"><span class="ic {{ 'claude' if a.kind == 'claude' else '' }}">{{ hicon(a.icon) }}</span><div><h3>{{ a.label }}</h3>{{ badge('Claude · on demand' if a.kind == 'claude' else 'Deterministic rules', 'accent' if a.kind == 'claude' else 'brand') }} {% if a.key in settings.agents and not settings.agents[a.key] %}{{ badge('off', 'critical') }}{% endif %}</div></div>
+        <p>{{ a.purpose }}</p>
+        <dl class="hx-kv hx-small"><dt>Reads</dt><dd>{{ a.inputs }}</dd><dt>Produces</dt><dd>{{ a.outputs }}</dd></dl>
+        <div class="stats">
+            <div class="stat"><b>{{ st.runs|hub_num }}</b><small>runs</small></div>
+            <div class="stat"><b>{{ st.needs_human|hub_num }}</b><small>to a person</small></div>
+            <div class="stat"><b>{{ st.mean_ms if st.mean_ms else '-' }}</b><small>ms each</small></div>
+        </div>
+        {% if a.kind == 'claude' %}<div class="hx-small hx-muted">{% if llm.ready %}Ready · {{ llm.model }} via {{ llm.gateway }} · {{ llm.calls }} call(s) this session{% else %}{{ llm.why }}{% endif %}</div>{% endif %}
+    </div>
+    {% endfor %}
+</div>
+
+<div class="hx-grid wide-right">
+    <div class="hx-card">
+        <div class="hx-card-head"><div><h2>{{ icon('sliders') }} Settings</h2><div class="hx-sub">Saved per hub; re-run to apply to the open book</div></div></div>
+        <div class="hx-card-body">
+            <form method="post" action="{{ url_for('hub.agents_settings') }}" style="display: flex; flex-direction: column; gap: 14px">
+                <div class="hx-field">
+                    <label for="gate">Confidence gate</label>
+                    <div class="hx-slider-row">
+                        <input class="hx-slider" type="range" id="gate" name="gate" min="70" max="98" step="1" value="{{ settings.gate }}" oninput="document.getElementById('gate-out').textContent = this.value" {% if not can_edit %}disabled{% endif %}>
+                        <span class="hx-slider-value" id="gate-out">{{ settings.gate }}</span>
+                    </div>
+                    <div class="hx-ticks"><span>70 · lenient</span><span>85 · default</span><span>98 · nothing clears</span></div>
+                    <span class="hx-help">A record is cleared or confirmed only when the agent's confidence reaches the gate. A full-date conflict of ten years or more scores 96, of five to nine years 88; an exact date with a strong name 95.</span>
+                </div>
+                <div class="hx-field">
+                    <label for="strict">Document strictness</label>
+                    <select class="hx-select" id="strict" name="doc_strictness" {% if not can_edit %}disabled{% endif %}>
+                        {% for k, v in (('lenient', 'Lenient · proof of address within 12 months, glare and blur referred'), ('standard', 'Standard · within 6 months'), ('strict', 'Strict · within 3 months')) %}<option value="{{ k }}" {% if settings.doc_strictness == k %}selected{% endif %}>{{ v }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div>
+                    {% for key, label, help in (('sanctions_guard', 'Sanctions always to a person', 'A sanctions-list record is never cleared by the agents, whatever the date of birth says.'), ('auto_rfi', 'Auto-RFI on an unresolved address', 'When the date of birth is not decisive and the addresses on file disagree, ask the customer for a proof of address before an analyst spends time.'), ('claude', 'Claude agents', 'The on-demand buttons on a case. Needs LLM_FOUNDRY_KEY.')) %}
+                    <div class="hx-toggle"><div><b>{{ label }}</b><small>{{ help }}</small></div>
+                        <label class="hx-switch"><input type="hidden" name="{{ key }}" value="0"><input type="checkbox" name="{{ key }}" value="1" {% if settings[key] %}checked{% endif %} {% if not can_edit %}disabled{% endif %}><span></span></label></div>
+                    {% endfor %}
+                    {% set agent_help = {'identity': 'Off: the CRM name is screened as keyed, and the true matches hidden behind a name variance are no longer flagged.',
+                                         'intake': 'Off: every upload is accepted; nothing goes back to the customer and no fraud upload is referred.',
+                                         'adjudication': 'Off: no record is cleared or confirmed; the whole book goes to a person.',
+                                         'triage': 'Off: whatever is not cleared goes to L1 at P3, with no routing to L2 or EDD.'} %}
+                    {% for key in run_order %}{% set a = agents|selectattr('key', 'equalto', key)|first %}
+                    <div class="hx-toggle"><div><b>{{ a.label }}</b><small>{{ agent_help[key] }}</small></div>
+                        <label class="hx-switch"><input type="hidden" name="agent_{{ key }}" value="0"><input type="checkbox" name="agent_{{ key }}" value="1" {% if settings.agents[key] %}checked{% endif %} {% if not can_edit %}disabled{% endif %}><span></span></label></div>
+                    {% endfor %}
+                </div>
+                {% if can_edit %}<div class="hx-row"><button type="submit" class="hx-btn hx-btn-primary">Save settings</button><span class="hx-help">Then re-run the pipeline.</span></div>{% endif %}
+            </form>
+        </div>
+    </div>
+    <div>
+        <div class="hx-card">
+            <div class="hx-card-head"><div><h2>Change history</h2></div></div>
+            <div class="hx-card-body">
+                <ul class="hx-history">
+                    {% for h in history %}<li><span class="when">{{ h.at|hub_dt }}</span><span><b>{{ h.label }}</b> {{ h.from }} → {{ h.to }} · {{ h.by }}</span></li>{% else %}<li class="hx-muted">No change yet; the defaults are in force.</li>{% endfor %}
+                </ul>
+            </div>
+        </div>
+        <div class="hx-card">
+            <div class="hx-card-head"><div><h2>How the gate moves the split</h2></div></div>
+            <div class="hx-card-body hx-small">
+                <p>Full-date conflicts of ten years or more clear at any gate up to 96; the five-to-nine-year group drops out above 88; year-only conflicts above 92 or 85. An exact date of birth never clears a record, and a sanctions record never clears while the guard is on. At 97 nothing clears, and the whole book goes to people - the before-and-after number is in the flash after each re-run.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="hx-card">
+    <div class="hx-card-head"><div><h2>Variance playbook</h2><div class="hx-sub">The 43 variance types the log documents, with the control the reference recommends. The Identity Normalisation Agent implements the name and address controls; the Accuracy page shows how often it detected each one.</div></div></div>
+    <div class="hx-card-body pad-0">
+        <table class="hx-table compact hx-playbook">
+            <thead><tr><th>Passport</th><th>Field</th><th>Variance</th><th>What happens</th><th>Recommended control</th><th class="num">Cases</th><th>Example</th></tr></thead>
+            <tbody>
+            {% for (country, field), rows in playbook_groups.items() %}
+            {% for p in rows %}
+            <tr><td>{{ p.country }}</td><td>{{ p.field }}</td><td><b>{{ p.variance }}</b></td><td class="wrap hx-small">{{ p.what }}</td><td class="ctrl hx-small">{{ p.control }}</td><td class="num">{{ p.cases }}</td><td class="id"><a href="{{ url_for('hub.case', case_id=p.example) }}">{{ p.example }}</a></td></tr>
+            {% endfor %}
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

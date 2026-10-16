@@ -1,0 +1,50 @@
+{% extends "hub/base.html" %}
+{% block title %}Audit log · {{ product }}{% endblock %}
+{% block content %}
+<div class="hx-head">
+    <div>
+        <div class="hx-eyebrow">Audit log</div>
+        <h1>Every action on every case</h1>
+        <p>Decisions, overrides, referrals and Claude calls across the hub, newest first. The agents' own runs are on each case's trail.</p>
+    </div>
+    <div class="hx-actions"><a class="hx-btn hx-btn-outline" href="{{ url_for('hub.audit', format='csv') }}">{{ icon('download') }} CSV</a></div>
+</div>
+<div class="hx-card">
+    <div class="hx-filters">
+        <div class="hx-field"><label>Actor</label><select class="hx-select hx-select-sm" id="al-actor" onchange="alFilter()"><option value="">All</option>{% for a in actors %}<option value="{{ a }}">{{ a }}</option>{% endfor %}</select></div>
+        <div class="hx-field"><label>Action</label><select class="hx-select hx-select-sm" id="al-action" onchange="alFilter()"><option value="">All</option>{% for k in kinds %}<option value="{{ k }}">{{ k }}</option>{% endfor %}</select></div>
+        <div class="hx-field grow"><label>Text</label><input class="hx-input hx-input-sm" id="al-q" oninput="alFilter()" placeholder="Case id, name or detail"></div>
+    </div>
+    <div class="hx-card-body pad-0">
+        <table class="hx-table compact" id="audit-table">
+            <thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Case</th><th>Detail</th></tr></thead>
+            <tbody>
+            {% for r in rows %}
+            <tr data-actor="{{ r.actor }}" data-action="{{ r.action }}" data-text="{{ (r.case ~ ' ' ~ r.name ~ ' ' ~ r.detail)|lower }}">
+                <td class="hx-muted">{{ r.at|hub_dt }}</td><td>{{ r.actor }}</td><td><b>{{ r.action }}</b></td>
+                <td class="id"><a href="{{ url_for('hub.case', case_id=r.case) }}">{{ r.case }}</a><br><span class="hx-small hx-muted">{{ r.name }}</span></td>
+                <td class="wrap hx-small">{{ r.detail }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" class="hx-empty">No human action yet.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="hx-foot"><span id="al-count">{{ rows|length }} entries</span></div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+function alFilter() {
+    var actor = document.getElementById('al-actor').value, action = document.getElementById('al-action').value, q = document.getElementById('al-q').value.trim().toLowerCase();
+    var n = 0;
+    document.querySelectorAll('#audit-table tbody tr[data-actor]').forEach(function (r) {
+        var ok = (!actor || r.dataset.actor === actor) && (!action || r.dataset.action === action) && (!q || r.dataset.text.indexOf(q) >= 0);
+        r.classList.toggle('hidden', !ok);
+        if (ok) { n += 1; }
+    });
+    document.getElementById('al-count').textContent = n + ' entries';
+}
+</script>
+{% endblock %}
